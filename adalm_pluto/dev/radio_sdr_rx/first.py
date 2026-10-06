@@ -262,7 +262,7 @@ class first(gr.top_block, Qt.QWidget):
                 50000,
                 window.WIN_HAMMING,
                 6.76))
-        self.iio_pluto_source_0 = iio.fmcomms2_source_fc32('192.168.2.1' if '192.168.2.1' else iio.get_pluto_uri(), [True, True], 32768)
+        self.iio_pluto_source_0 = iio.fmcomms2_source_fc32('192.168.3.1' if '192.168.3.1' else iio.get_pluto_uri(), [True, True], 32768)
         self.iio_pluto_source_0.set_len_tag_key('packet_len')
         self.iio_pluto_source_0.set_frequency(int(tune))
         self.iio_pluto_source_0.set_samplerate(int(samp_rate))

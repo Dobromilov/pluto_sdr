@@ -76,8 +76,7 @@ int main(){
     SoapySDRStream *tx_stream = SoapySDRDevice_setupStream(
         sdr, SOAPY_SDR_TX, SOAPY_SDR_CS16, &channel, 1, nullptr);
 
-    if (rx_stream == nullptr || tx_stream == nullptr)
-    {
+    if (rx_stream == nullptr || tx_stream == nullptr){
         std::fprintf(stderr, "Ошибка создания потока: %s\n",
                      SoapySDRDevice_lastError());
         if (rx_stream != nullptr)
@@ -91,8 +90,7 @@ int main(){
     const size_t rx_mtu = SoapySDRDevice_getStreamMTU(sdr, rx_stream);
     const size_t tx_mtu = SoapySDRDevice_getStreamMTU(sdr, tx_stream);
 
-    if (tx_mtu < 6)
-    {
+    if (tx_mtu < 6){
         std::fprintf(stderr, "TX MTU слишком мал для временной метки: %zu\n",
                      tx_mtu);
         SoapySDRDevice_closeStream(sdr, rx_stream);
@@ -113,15 +111,13 @@ int main(){
 
     // Остальная часть содержит постоянные I/Q. Для 12-битного DAC значения
     // располагаются в старших 12 битах 16-битного слова.
-    for (size_t i = 12; i + 1 < tx_buffer.size(); i += 2)
-    {
+    for (size_t i = 12; i + 1 < tx_buffer.size(); i += 2){
         tx_buffer[i] = static_cast<int16_t>(1500 << 4);     // I
         tx_buffer[i + 1] = static_cast<int16_t>(1500 << 4); // Q
     }
 
     std::FILE *file = std::fopen("rxdata.pcm", "wb");
-    if (file == nullptr)
-    {
+    if (file == nullptr){
         std::perror("Не удалось открыть rxdata.pcm");
         SoapySDRDevice_closeStream(sdr, rx_stream);
         SoapySDRDevice_closeStream(sdr, tx_stream);
