@@ -10,9 +10,8 @@ find_package(SoapySDR REQUIRED)
 add_executable(lab_06 pluto_sdr_timestamp/main.cpp)
 target_link_libraries(lab_06 PRIVATE SoapySDR)
 
-# Два независимых узла.
-add_executable(tx_node pluto_tx_rx_link/tx_main.cpp)
-target_link_libraries(tx_node PRIVATE SoapySDR)
-
-add_executable(rx_node pluto_tx_rx_link/rx_main.cpp)
-target_link_libraries(rx_node PRIVATE SoapySDR)
+# Один исполняемый файл; каждый узел остаётся в собственном исходном файле.
+add_executable(pluto_sdr
+    pluto_tx_rx_link/main.cpp
+    pluto_tx_rx_link/sdr_runner.cpp)
+target_link_libraries(pluto_sdr PRIVATE SoapySDR)
