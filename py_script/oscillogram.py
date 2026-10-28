@@ -9,60 +9,45 @@ name = Path.home() / "Desktop/SDR/adalm_pluto/dev/build/rx_samples.pcm"
 if len(sys.argv) > 1:
     name = Path(sys.argv[1]).expanduser()
 
-# Номера комплексных сэмплов, как в вашем примере: [start, stop).
-start = 149000
-stop = 243000
-
 if not name.is_file():
     raise SystemExit(f"Нет файла: {name}")
 
-sample_count = name.stat().st_size // 4  # I: 2 байта, Q: 2 байта
-if start < 0 or stop <= start or start >= sample_count:
-    raise SystemExit(f"Неверный участок [{start}, {stop}); в файле {sample_count} сэмплов")
-stop = min(stop, sample_count)
-
-real = []
-imag = []
-with open(name, "rb") as f:
-    f.seek(start * 4)  # Пропускаем данные до выбранного участка.
-    index = 0
-    while index < 2 * (stop - start) and (byte := f.read(2)):
-        if len(byte) != 2:
-            break
-        value = int.from_bytes(byte, byteorder="little", signed=True)
-        if index % 2 == 0:
-            real.append(value)  # I
-        else:
-            imag.append(value)  # Q
-        index += 1
+# Быстрое чтение всего файла как массива int16 (little-endian).
+raw = np.fromfile(name, dtype="<i2")
 
 # Если запись ещё идёт или файл оборван, используем только полные пары I/Q.
-count = min(len(real), len(imag))
-real = real[:count]
-imag = imag[:count]
+count = len(raw) // 2
 if count == 0:
-    raise SystemExit("В выбранном участке нет полных пар I/Q")
-samples = np.arange(start, start + count)
+    raise SystemExit("В файле нет полных пар I/Q")
 
-# Ваш экспорт выбранного участка в C++-массив.
+raw = raw[: count * 2]
+real = raw[0::2]  # Чётные индексы — I
+imag = raw[1::2]  # Нечётные индексы — Q
+
+# Модуль (амплитуда/огибающая) комплексного сигнала: sqrt(I^2 + Q^2)
+mag = np.hypot(real, imag)
+samples = np.arange(count)
+
+# Ваш экспорт в C++-массив.
 out = Path(__file__).resolve().with_name("out.txt")
 with open(out, "w", encoding="utf-8") as file:
     file.write("static std::vector<std::complex<double>> test_rx_samples = {\n")
     for i in range(count):
-        file.write("{" + str(real[i]) + ", " + str(imag[i]) + "},")
+        file.write(f"{{{real[i]}, {imag[i]}}},")
         if (i + 1) % 20 == 0:
             file.write("\n")
     file.write("\n};\n")
-print(f"Сэмплов: {count}; участок [{start}, {start + count})")
+print(f"Сэмплов: {count}")
 print(f"C++-массив: {out}")
 
-# Отрисовка I/Q: синий — I, красный — Q.
+# Отрисовка I/Q и модуля: синий — I, красный — Q, зелёный — |IQ|.
 fig, ax = plt.subplots(figsize=(12, 5))
-ax.plot(samples, imag, color="red", label="Q (imag)", linewidth=0.6)
-ax.plot(samples, real, color="blue", label="I (real)", linewidth=0.6)
+ax.plot(samples, imag, color="red", label="Q (imag)", linewidth=0.6, alpha=0.7)
+ax.plot(samples, real, color="blue", label="I (real)", linewidth=0.6, alpha=0.7)
+ax.plot(samples, mag, color="green", label="|IQ| (модуль)", linewidth=0.9)
 ax.set_xlabel("Номер комплексного сэмпла")
 ax.set_ylabel("Амплитуда, int16")
-ax.set_title(f"RX: I/Q из {name.name}")
+ax.set_title(f"RX: I/Q и модуль из {name.name}")
 ax.grid(True, alpha=0.3)
 ax.legend()
 fig.tight_layout()
