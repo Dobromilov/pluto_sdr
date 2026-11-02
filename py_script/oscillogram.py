@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Файл, который пишет наш RX. Другой файл можно передать первым аргументом.
-name = Path.home() / "Desktop/SDR/adalm_pluto/dev/build/rx_samples.pcm"
+name = Path(__file__).resolve().parent.parent / "build" / "rx_samples.pcm"
 if len(sys.argv) > 1:
     name = Path(sys.argv[1]).expanduser()
 
@@ -29,7 +29,7 @@ mag = np.hypot(real, imag)
 samples = np.arange(count)
 
 # Ваш экспорт в C++-массив.
-out = Path(__file__).resolve().with_name("out.txt")
+out = name.with_name("out.txt")
 with open(out, "w", encoding="utf-8") as file:
     file.write("static std::vector<std::complex<double>> test_rx_samples = {\n")
     for i in range(count):
@@ -51,7 +51,7 @@ ax.set_title(f"RX: I/Q и модуль из {name.name}")
 ax.grid(True, alpha=0.3)
 ax.legend()
 fig.tight_layout()
-plot = Path(__file__).resolve().with_name("rx_iq.png")
+plot = name.with_name("rx_iq.png")
 fig.savefig(plot, dpi=160)
 print(f"График: {plot}")
 plt.show()

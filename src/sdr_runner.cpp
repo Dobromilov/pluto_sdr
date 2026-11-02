@@ -45,7 +45,7 @@ static void fill_tx_buffer(std::vector<int16_t>& buffer, double sample_rate, siz
     if (n % 2 != 0)
         return;
 
-    // Первые 12 слов пропускаем, как в вашем fill_payload.
+    // Первые 12 слов пропускаем
     for (size_t i = 12; i + 1 < buffer.size(); i += 2) {
         buffer[i] = static_cast<int16_t>(std::cos(phase) * amplitude);
         buffer[i + 1] = static_cast<int16_t>(std::sin(phase) * amplitude);
