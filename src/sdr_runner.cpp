@@ -3,6 +3,7 @@
 #include <SoapySDR/Formats.h>
 #include <SoapySDR/Errors.h>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <csignal>
@@ -33,26 +34,15 @@ static SoapySDRDevice* open_pluto(const config& cfg, const char* dev_addr) {
     return sdr;
 }
 
-static void fill_tx_buffer(std::vector<int16_t>& buffer, double sample_rate, size_t n) {
-    static double phase = 0.0;
-    constexpr double tone_offset_hz = 100e3;
+static void fill_tx_buffer(std::vector<int16_t>& buffer,
+                           const std::vector<std::complex<double>>& tx_samples) {
     constexpr double amplitude = 16000.0;
-    const double dphase = 2.0 * M_PI * tone_offset_hz / sample_rate;
-
-    for (auto& sample : buffer)
-        sample = 0;
-
-    if (n % 2 != 0)
-        return;
-
-    // Первые 12 слов пропускаем
-    for (size_t i = 12; i + 1 < buffer.size(); i += 2) {
-        buffer[i] = static_cast<int16_t>(std::cos(phase) * amplitude);
-        buffer[i + 1] = static_cast<int16_t>(std::sin(phase) * amplitude);
-
-        phase += dphase;
-        if (phase > 2.0 * M_PI)
-            phase -= 2.0 * M_PI;
+    for (size_t i = 0; i < tx_samples.size(); ++i) {
+        const auto& sample = tx_samples[i];
+        buffer[2 * i] = static_cast<int16_t>(
+            std::lround(amplitude * std::clamp(sample.real(), -1.0, 1.0)));
+        buffer[2 * i + 1] = static_cast<int16_t>(
+            std::lround(amplitude * std::clamp(sample.imag(), -1.0, 1.0)));
     }
 }
 
@@ -76,7 +66,12 @@ static bool check_rx_buffer(int sr, int flags) {
     return true;
 }
 
-int run_sdr(const config& cfg, int argc, char* argv[]) {
+int run_sdr(const config& cfg, int argc, char* argv[],
+            const std::vector<std::complex<double>>& tx_samples) {
+    if (cfg.is_tx && tx_samples.empty()) {
+        std::cerr << "TX: пустой BPSK-пакет\n";
+        return 1;
+    }
     running = 1;
     std::signal(SIGINT, stop_sdr);
     std::signal(SIGTERM, stop_sdr);
@@ -137,6 +132,23 @@ int run_sdr(const config& cfg, int argc, char* argv[]) {
     }
     SoapySDRKwargs_clear(&stream_args);
 
+    std::vector<int16_t> pluto_tx_buffer;
+    size_t tx_mtu = 0;
+    if (txStream) {
+        tx_mtu = SoapySDRDevice_getStreamMTU(sdr, txStream);
+        if (tx_samples.size() > tx_mtu) {
+            std::fprintf(stderr, "TX: пакет %zu отсчётов не помещается в буфер %zu\n",
+                         tx_samples.size(), tx_mtu);
+            SoapySDRDevice_closeStream(sdr, txStream);
+            SoapySDRDevice_closeStream(sdr, rxStream);
+            SoapySDRDevice_unmake(sdr);
+            return 1;
+        }
+        // Нулевой хвост дополняет пакет до полного буфера драйвера.
+        pluto_tx_buffer.resize(2 * tx_mtu, 0);
+        fill_tx_buffer(pluto_tx_buffer, tx_samples);
+    }
+
     const bool rx_active = check_result(SoapySDRDevice_activateStream(sdr, rxStream, 0, 0, 0), "activateStream RX");
     const bool tx_active = rx_active && cfg.is_tx && check_result(SoapySDRDevice_activateStream(sdr, txStream, 0, 0, 0), "activateStream TX");
     if (!rx_active || (cfg.is_tx && !tx_active)) {
@@ -148,8 +160,6 @@ int run_sdr(const config& cfg, int argc, char* argv[]) {
     }
 
     std::vector<int16_t> pluto_rx_buffer(2 * SIZE_BUF, 0);
-    std::vector<int16_t> pluto_tx_buffer(2 * SIZE_BUF, 0);
-    std::vector<std::complex<double>> raw_samples(SIZE_BUF);
     FILE* file = nullptr;
     long long last_time = 0;
     size_t buffers_read = 0;
@@ -191,9 +201,6 @@ int run_sdr(const config& cfg, int argc, char* argv[]) {
                 result = 1;
                 break;
             }
-            for (size_t i = 0; i < static_cast<size_t>(sr); i++) {
-                raw_samples[i] = std::complex<double>(pluto_rx_buffer[2 * i], pluto_rx_buffer[2 * i + 1]);
-            }
         }
 
         last_time = timeNs;
@@ -201,19 +208,12 @@ int run_sdr(const config& cfg, int argc, char* argv[]) {
 
         if (cfg.is_tx) {
             if (buffers_read % 10 == 0) {
-                fill_tx_buffer(pluto_tx_buffer, cfg.sample_rate, buffers_read / 10);
-                pluto_tx_buffer[0] = pluto_tx_buffer[1] = static_cast<int16_t>(0xffff);
-                pluto_tx_buffer[10] = pluto_tx_buffer[11] = static_cast<int16_t>(0xffff);
-                for (size_t i = 0; i < 8; i++) {
-                    uint8_t tx_time_byte = (static_cast<uint64_t>(tx_time) >> (i * 8)) & 0xff;
-                    pluto_tx_buffer[2 + i] = tx_time_byte << 4;
-                }
-
                 const void* tx_buffs[] = { pluto_tx_buffer.data() };
+                // Драйвер добавляет timestamp отдельно от передаваемых I/Q.
                 flags = SOAPY_SDR_HAS_TIME;
-                int st = SoapySDRDevice_writeStream(sdr, txStream, tx_buffs, SIZE_BUF, &flags, tx_time, cfg.timeout_us);
-                if (st != SIZE_BUF) {
-                    std::fprintf(stderr, "TX: результат %d / %d (%s)\n", st, SIZE_BUF,
+                int st = SoapySDRDevice_writeStream(sdr, txStream, tx_buffs, tx_mtu, &flags, tx_time, cfg.timeout_us);
+                if (st < 0 || static_cast<size_t>(st) != tx_mtu) {
+                    std::fprintf(stderr, "TX: результат %d / %zu (%s)\n", st, tx_mtu,
                                  st < 0 ? SoapySDR_errToStr(st) : "буфер передан не полностью");
                     result = 1;
                     break;

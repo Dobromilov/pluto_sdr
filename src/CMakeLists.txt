@@ -8,6 +8,7 @@ find_package(SoapySDR REQUIRED)
 
 add_executable(pluto_sdr
     main.cpp
-    sdr_runner.cpp)
+    sdr_runner.cpp
+    convolution.cpp)
 target_include_directories(pluto_sdr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(pluto_sdr PRIVATE SoapySDR)

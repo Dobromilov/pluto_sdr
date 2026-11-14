@@ -8,6 +8,7 @@ struct config {
     bool is_tx;
     size_t channel = 0;
     double sample_rate = 2e6;
+    size_t samples_per_symbol = 4;
     double freq1 = 800e6;
     double freq2 = 850e6;
     double rx_gain = 45.0;
