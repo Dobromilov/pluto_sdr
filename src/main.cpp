@@ -86,15 +86,18 @@ std::vector<std::complex<double>> upsample(
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << "err, pls add type (rx or tx)\n";
+        std::cerr << "Usage: pluto_sdr <tx|rx|export> [URI]\n";
         return 1;
     }
     std::string mode = argv[1];
+    const bool export_only = mode == "export";
     config cfg;
     std::vector<std::complex<double>> tx_samples;
-    if (mode == "tx") {
+    if (mode == "tx" || export_only) {
         cfg.is_tx = true;
-        std::cout << "start tx\n";
+        if (!export_only) {
+            std::cout << "start tx\n";
+        }
 
         const auto bits = bits_generation();
         const auto symbols = bpsk_modulate(bits);
@@ -127,12 +130,17 @@ int main(int argc, char* argv[]) {
         }
         std::cout << "BPSK: " << bits.size() << " бит, "
                   << tx_samples.size() << " отсчётов в пакете\n";
+        if (export_only) {
+            std::cout << "Экспортированы tx_preamble.csv и tx_symbols.csv\n";
+            return 0;
+        }
 
     } else if (mode == "rx") {
         cfg.is_tx = false;
         std::cout << "start rx\n";
     } else {
-        std::cerr << "error type send: " << mode << "\n";
+        std::cerr << "Неизвестный режим: " << mode << '\n'
+                  << "Usage: pluto_sdr <tx|rx|export> [URI]\n";
         return 1;
     }
 
