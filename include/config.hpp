@@ -14,7 +14,7 @@ struct config {
     double rx_gain = 45.0;
     double tx_gain = 45.0;
     long timeout_us = 400000;
-    int direct = 1;
+    int direct = 1; // поток идет через usb:…
     size_t timestamp_every = 1920;
     int loopback = 0;
     size_t iteration_count = 100;

@@ -66,16 +66,15 @@ static bool check_rx_buffer(int sr, int flags) {
     return true;
 }
 
-int run_sdr(const config& cfg, int argc, char* argv[],
+int run_sdr(const config& cfg, const char* dev_addr,
             const std::vector<std::complex<double>>& tx_samples) {
     if (cfg.is_tx && tx_samples.empty()) {
-        std::cerr << "TX: пустой BPSK-пакет\n";
+        std::cerr << "TX: пустой пакет\n";
         return 1;
     }
     running = 1;
     std::signal(SIGINT, stop_sdr);
     std::signal(SIGTERM, stop_sdr);
-    const char* dev_addr = (argc > 2) ? argv[2] : "";
     SoapySDRDevice* sdr = open_pluto(cfg, dev_addr);
     if (!sdr) {
         std::cerr << "Не удалось открыть SDR устройство\n";

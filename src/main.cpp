@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "convolution.hpp"
 
+#include <cmath>
 #include <complex>
 #include <cstdint>
 #include <fstream>
@@ -10,7 +11,7 @@
 #include <vector>
 
 int run_sdr(
-    const config& cfg, int argc, char* argv[],
+    const config& cfg, const char* dev_addr,
     const std::vector<std::complex<double>>& tx_samples
 );
 
@@ -65,6 +66,19 @@ std::vector<std::complex<double>> bpsk_modulate(
     return symbols;
 }
 
+// Первый бит пары задаёт знак I, второй — знак Q.
+std::vector<std::complex<double>> qpsk_modulate(const std::vector<bool>& bits) {
+    const double level = 1.0 / std::sqrt(2.0);
+    std::vector<std::complex<double>> symbols;
+    symbols.reserve(bits.size() / 2);
+    for (std::size_t i = 0; i < bits.size(); i += 2) {
+        const double real = bits[i] ? -level : level;
+        const double imag = bits[i + 1] ? -level : level;
+        symbols.emplace_back(real, imag);
+    }
+    return symbols;
+}
+
 std::vector<std::complex<double>> upsample(
     const std::vector<std::complex<double>>& symbols,
     size_t samples_per_symbol
@@ -85,12 +99,33 @@ std::vector<std::complex<double>> upsample(
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: pluto_sdr <tx|rx|export> [URI]\n";
+    const std::string mode = argc > 1 ? argv[1] : "";
+    if (mode != "tx" && mode != "rx" && mode != "export") {
+        std::cerr << "Usage: pluto_sdr tx [URI] [--bpsk | --qpsk]\n"
+                  << "       pluto_sdr rx [URI]\n"
+                  << "       pluto_sdr export [--bpsk | --qpsk]\n";
         return 1;
     }
-    std::string mode = argv[1];
     const bool export_only = mode == "export";
+    bool use_qpsk = false;
+    bool modulation_selected = false;
+    const char* dev_addr = "";
+    for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if ((arg == "--bpsk" || arg == "--qpsk") && mode != "rx") {
+            if (modulation_selected) {
+                std::cerr << "Укажи только один флаг модуляции: --bpsk или --qpsk\n";
+                return 1;
+            }
+            use_qpsk = arg == "--qpsk";
+            modulation_selected = true;
+        } else if (!export_only && dev_addr[0] == '\0' && !arg.empty() && arg[0] != '-') {
+            dev_addr = argv[i];
+        } else {
+            std::cerr << "Недопустимый аргумент для режима " << mode << ": " << arg << '\n';
+            return 1;
+        }
+    }
     config cfg;
     std::vector<std::complex<double>> tx_samples;
     if (mode == "tx" || export_only) {
@@ -100,7 +135,11 @@ int main(int argc, char* argv[]) {
         }
 
         const auto bits = bits_generation();
-        const auto symbols = bpsk_modulate(bits);
+        if (use_qpsk && bits.size() % 2 != 0) {
+            std::cerr << "QPSK требует чётного числа битов\n";
+            return 1;
+        }
+        const auto symbols = use_qpsk ? qpsk_modulate(bits) : bpsk_modulate(bits);
         const size_t samples_per_symbol = cfg.samples_per_symbol;
         const auto upsampled = upsample(symbols, samples_per_symbol);
 
@@ -128,21 +167,17 @@ int main(int argc, char* argv[]) {
             !save_iq_csv("tx_preamble.csv", preamble)) {
             return 1;
         }
-        std::cout << "BPSK: " << bits.size() << " бит, "
+        std::cout << (use_qpsk ? "QPSK: " : "BPSK: ") << bits.size() << " бит, "
                   << tx_samples.size() << " отсчётов в пакете\n";
         if (export_only) {
             std::cout << "Экспортированы tx_preamble.csv и tx_symbols.csv\n";
             return 0;
         }
 
-    } else if (mode == "rx") {
+    } else {
         cfg.is_tx = false;
         std::cout << "start rx\n";
-    } else {
-        std::cerr << "Неизвестный режим: " << mode << '\n'
-                  << "Usage: pluto_sdr <tx|rx|export> [URI]\n";
-        return 1;
     }
 
-    return run_sdr(cfg, argc, argv, tx_samples);
+    return run_sdr(cfg, dev_addr, tx_samples);
 }
